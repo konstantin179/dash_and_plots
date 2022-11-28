@@ -12,7 +12,7 @@ import dash_pivottable
 #           "Api-id": os.getenv("API_ID"),
 #           "Brand-id": os.getenv("BRAND_ID"),
 #           "Category-id": os.getenv("CATEGORY_ID"), }
-# req = requests.get("http://62.84.124.35:5051/api/v1/week/functions/main_pg_fullgraph", headers=headers)
+# req = requests.get(os.getenv("API_URL"), headers=headers)
 # data = req.json()
 data = {'y': [2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022],
         'wk': [34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47],
