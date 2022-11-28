@@ -2,6 +2,7 @@ from dash import Dash, html, dcc, Input, Output, dash_table
 import plotly.express as px
 import pandas as pd
 import dash_pivottable
+
 # import requests
 # import os
 # from dotenv import load_dotenv
@@ -41,9 +42,8 @@ colors = {
 }
 font = {"family": "Inter",
         "size": 14,
-        "color":  "#000",
+        "color": "#000",
 }
-
 app.layout = html.Div(style={'backgroundColor': colors['background']}, children=[
     html.H1(
         children='Dash capabilities',
@@ -58,7 +58,7 @@ app.layout = html.Div(style={'backgroundColor': colors['background']}, children=
         style_table={'height': 400},  # defaults to 500
         page_size=10,
         style_cell=dict(textAlign='left',
-                        font=font,),
+                        font=font, ),
         style_header=dict(backgroundColor=colors['background']),
         style_data=dict(backgroundColor=colors['background']),
 
@@ -68,8 +68,8 @@ app.layout = html.Div(style={'backgroundColor': colors['background']}, children=
                           'ordered_units', 'cancellations', 'returns', 'cpm', 'cpo'],
                  value='session_view',
                  id='dropdown_columns',
-                 style=dict(font=font,),
-    ),
+                 style=dict(font=font, ),
+                 ),
     dcc.Graph(id='line_plot'),
     html.H2(children='Pivot table'),
     html.Div(
