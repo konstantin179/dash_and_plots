@@ -29,56 +29,73 @@ df = df.fillna(value="")
 
 app = Dash(__name__)
 seller_names = sorted(df["api_name"].unique())
-# colors = {
-#     'background': '#F5F5F5',
-#     'text': '#000',
-# }
-# font = {"family": "Inter",
-#         "size": 14,
-#         "color": "#000",
-# }
-app.layout = html.Div([
-    html.Div(children=[
-        html.Label('Даты'),
-        dcc.DatePickerRange(
-            id='date_picker',
-            start_date_placeholder_text="ДД.ММ.ГГГГ",
-            end_date_placeholder_text="ДД.ММ.ГГГГ",
-            display_format="DD.MM.YYYY",
-            month_format="MMMM YYYY",
-            first_day_of_week=1,
-            clearable=True,
-            show_outside_days=True,
-            ),
-        ]
-    ),
-    html.Div(children=[
-        html.Label('Продавец'),
-        dcc.Dropdown(options=seller_names,
-                     value=seller_names[0],
-                     id='seller_name_dropdown', ),
-        ],
-    ),
-    html.Div(children=[
-        html.Label('Категории'),
-        dcc.Dropdown(id='category_dropdown', multi=True, ),
-        ],
-    ),
-    html.Div(children=[
-        html.Label('Бренд'),
-        dcc.Dropdown(id='brand_dropdown', multi=True, ),
-        ],
-    ),
-    html.Div(children=[
-        html.Label('Товар'),
-        dcc.Dropdown(id='product_dropdown', multi=True, ),
-    ],
-    ),
-    # dcc.Graph(id='Graph1'),
-    # dcc.Graph(id='line_plot1'),
-    # dcc.Graph(id='line_plot2'),
+colors = {
+    'background': '#F5F5F5',
+    'text': '#000',
+}
+font = {"family": "Inter",
+        "size": 14,
+        "color": "#000",
+}
 
-])
+
+app.layout = html.Div([
+    html.Div([
+        html.Div(children=[
+            html.Span(
+                'Период', 
+                className='period-string__text', 
+            ),
+            dcc.DatePickerRange(
+                id='date_picker',
+                className='date__selector',
+                start_date_placeholder_text="ДД.ММ.ГГГГ",
+                end_date_placeholder_text="ДД.ММ.ГГГГ",
+                display_format="DD.MM.YYYY",
+                month_format="MMMM YYYY",
+                first_day_of_week=1,
+                clearable=True,
+                show_outside_days=True,
+                ),
+            ],
+        ),
+        html.Div(children=[
+            html.Span('Магазин'),
+            dcc.Dropdown(options=seller_names,
+                        value=seller_names[0],
+                        id='seller_name_dropdown',
+                        placeholder=''
+                        ),
+            ], className='shop_selector selector_wrapper'
+        ),
+        html.Div(children=[
+            html.Span('Категории'),
+            dcc.Dropdown(id='category_dropdown', multi=True, placeholder=''),
+            ], className='category_selector selector_wrapper'
+        ),
+        html.Div(children=[
+            html.Span('Бренд'),
+            dcc.Dropdown(id='brand_dropdown', multi=True, placeholder=''),
+            ], className='brand_selector selector_wrapper'
+        ),
+        html.Div(children=[
+            html.Button('Применить',className='use_selector_btn'),
+            html.Div(children=[
+                html.Span('', className='excel_btn')
+            ],className='excel_btn_container')
+        ], className='selector_btns_wrapper'
+        ),
+        # dcc.Graph(id='Graph1'),
+        # dcc.Graph(id='line_plot1'),
+        # dcc.Graph(id='line_plot2'),
+    ], 
+    className='period__block',
+    )
+], 
+className='period-string__content',
+)
+
+
 # fig = px.bar(long_df, x="nation", y="count", color="medal", title="Long-Form Input")
 
 
@@ -166,4 +183,4 @@ def product_dropdown_options(brands, all_brands):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
