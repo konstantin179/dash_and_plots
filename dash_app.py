@@ -79,6 +79,11 @@ app.layout = html.Div([
             ], className='brand_selector selector_wrapper'
         ),
         html.Div(children=[
+            html.Span('Товар'),
+            dcc.Dropdown(id='product_dropdown', multi=True, placeholder='', style={'display': 'block', 'visabillity': 'visible'}),
+            ], className='product_selector selector_wrapper'
+        ),
+        html.Div(children=[
             html.Button('Применить',className='use_selector_btn'),
             html.Div(children=[
                 html.Span('', className='excel_btn')
