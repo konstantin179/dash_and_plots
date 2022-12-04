@@ -1,21 +1,12 @@
 from dash import Dash, html, dcc, Input, Output, dash_table
+from dash.exceptions import PreventUpdate
 import plotly.express as px
 import pandas as pd
 import requests
-import os
-from dotenv import load_dotenv
+import json
 from postgres import DB, db_connection_string
+from datetime import date, timedelta
 
-load_dotenv()
-# params = {"Accept": "application/json",
-#           "api_id": os.getenv("API_ID"),
-#           "brand_id": os.getenv("BRAND_ID"),
-#           "category_id": os.getenv("CATEGORY_ID"), }
-# url = os.getenv("API_URL")
-# req = requests.get(url, params=params)
-# data = req.json()
-# print(data)
-# df = pd.DataFrame.from_dict(data)
 column_names = ["api_id", "api_name", "category_id", "category_name",
                 "brand_id", "brand_name", "product_id", "product_name"]
 query = f"""SELECT {', '.join(column_names)}
@@ -28,14 +19,17 @@ df = df.fillna(value="")
 
 app = Dash(__name__)
 seller_names = sorted(df["api_name"].unique())
-# colors = {
-#     'background': '#F5F5F5',
-#     'text': '#000',
-# }
-# font = {"family": "Inter",
-#         "size": 14,
-#         "color": "#000",
-# }
+colors = {
+    'background': '#F5F5F5',
+    'text': '#000',
+}
+font = {"family": "Inter",
+        "size": 14,
+        "color": "#000",
+        }
+# d = {'date': [1, 2], 'result': [3, 4]}
+# dff = pd.DataFrame(data=d)
+# fig = px.bar(dff, x="date", y="result", title="Динамика суммы заказов")
 app.layout = html.Div([
     html.Div(children=[
         html.Label('Даты'),
@@ -48,6 +42,8 @@ app.layout = html.Div([
             first_day_of_week=1,
             clearable=True,
             show_outside_days=True,
+            start_date=date.today() - timedelta(days=7),
+            end_date=date.today(),
         ),
     ]
     ),
@@ -107,14 +103,27 @@ app.layout = html.Div([
         html.Div(id='aiv_pre_seven_days'),
     ],
     ),
-
-    dcc.Graph(id='revenue_bar'),
-    html.Div(children=[
-        dcc.Graph(id='impressions_to_cart_conversion'),
-        dcc.Graph(id='cart_to_order_conversion'),
-        dcc.Graph(id='impressions_to_order_conversion'),
-    ],
+    html.Div(
+        dcc.Graph(id='revenue_bar', )
+        #                  figure=fig),
     ),
+    dcc.Store(
+        id='clientside-figure-store-px'
+    ),
+    html.Hr(),
+    html.Details([
+        html.Summary('Contents of figure storage'),
+        dcc.Markdown(
+            id='clientside-figure-json'
+        )
+    ])
+    # dash_table.DataTable(id='data_table', )
+    # html.Div(children=[
+    #     dcc.Graph(id='impressions_to_cart_conversion'),
+    #     dcc.Graph(id='cart_to_order_conversion'),
+    #     dcc.Graph(id='impressions_to_order_conversion'),
+    # ],
+    # ),
 
 ])
 
@@ -141,8 +150,7 @@ def get_params_lists(seller_name, category_names, all_category_names,
     params = {"api_id_list": api_id_list,
               "brand_name_list": brand_name_list,
               "category_name_list": category_name_list,
-              "sku_name_list": sku_name_list,
-              }
+              "sku_name_list": sku_name_list}
     return params
 
 
@@ -175,12 +183,10 @@ def values_seven_n_pre_seven_days(seller_name, category_names, all_category_name
         try:
             # print(f"try to get data to {title}")
             req = requests.post(f"http://62.84.124.35:5051/api/v1/dashboard/{title}", json=params)
+            req.raise_for_status()
             data = req.json()
             # print(data)
-            if req.status_code == 422:
-                titles_n_values[title] = ""
-            else:
-                titles_n_values[title] = list(data.values())[0]
+            titles_n_values[title] = list(data.values())[0]
         except requests.exceptions.RequestException as e:
             print(f"Request error to /api/v1/dashboard/{title}: " + str(e))
             titles_n_values[title] = ""
@@ -188,83 +194,212 @@ def values_seven_n_pre_seven_days(seller_name, category_names, all_category_name
     return values
 
 
+def get_graph_params(time_unit, start_date, end_date, seller_name, category_names,
+                     all_category_names, brand_names, all_brand_names):
+    api_id = df.loc[df["api_name"] == seller_name]["api_id"].iloc[0]
+    api_id_list = [api_id, ]
+    if "Выбрать все" in category_names:
+        all_category_names.remove("Выбрать все")
+        category_name_list = all_category_names
+    else:
+        category_name_list = category_names
+    if "Выбрать все" in brand_names:
+        all_brand_names.remove("Выбрать все")
+        brand_name_list = all_brand_names
+    else:
+        brand_name_list = brand_names
+    params = {"period": time_unit,
+              "api_id_list": api_id_list,
+              "brand_name_list": brand_name_list,
+              "category_name_list": category_name_list,
+              "date_from": start_date,
+              "date_to": end_date}
+    return params
+
+
+@app.callback(
+    Output('clientside-figure-store-px', 'data'),
+    # Output('revenue_bar', 'figure'),
+    # Output('data_table', 'data'),
+    Input('d_w_m_selection', 'value'),
+    Input('date_picker', 'start_date'),
+    Input('date_picker', 'end_date'),
+    Input('seller_name_dropdown', 'value'),
+    Input('category_dropdown', 'value'),
+    Input('category_dropdown', 'options'),
+    Input('brand_dropdown', 'value'),
+    Input('brand_dropdown', 'options'), )
+def revenue_bar_plot(time_unit, start_date, end_date, seller_name, category_names,
+                     all_category_names, brand_names, all_brand_names):
+    if not (category_names and all_category_names and brand_names and all_brand_names):
+        raise PreventUpdate
+    params = get_graph_params(time_unit, start_date, end_date, seller_name, category_names,
+                              all_category_names, brand_names, all_brand_names)
+    print("params:", params)
+    try:
+        print(f"try to get data to revenue_bar_plot")
+        req = requests.post(f"http://62.84.124.35:5051/api/v1/graphs/revenue", json=params)
+        req.raise_for_status()
+        data = req.json()
+        if data['result'] == 'No data available':
+            print(f"Response from /api/v1/graphs/revenue with params={params}: No data available")
+            raise PreventUpdate
+        dff = pd.DataFrame(data=data)
+        print(dff, dff.dtypes)
+    except requests.exceptions.RequestException as e:
+        print(f"Request error to /api/v1/graphs/revenue: " + str(e))
+        raise PreventUpdate
+    # d = {'date': [766711.0, 692273.0],
+    #      'result': [766711.0, 692273.0]}  # {'date': ["2022-11-27", "2022-11-28"], 'result': [766711.0, 692273.0]}
+    # dff = pd.DataFrame(data=d)
+    # print(type(dff['date'].iloc[0]))
+    # fig = px.bar(dff, x="date", y="result", title="Динамика суммы заказов")
+    # # fig.show()
+    # return fig
+    return dff.to_json(date_format='iso', orient='split')
+
+
 @app.callback(
     Output('revenue_bar', 'figure'),
-    Input('d_w_m_selection', 'value'),
-    Input('seller_name_dropdown', 'value'),
-    Input('category_dropdown', 'value'),
-    Input('category_dropdown', 'options'),
-    Input('brand_dropdown', 'value'),
-    Input('brand_dropdown', 'options'), )
-def revenue_bar_plot(d_w_m, seller_name, category_names, all_category_names, brand_names, all_brand_names):
-    # if not (category_names and all_category_names and brand_names and all_brand_names):
-    #     return None
-    # params_lists = get_params_lists(seller_name, category_names, all_category_names,
-    #                                 brand_names, all_brand_names, [], [])
-    # params = {"api_id": params_lists['api_id_list'][0],
-    #           "brand_id": params_lists['brand_name_list'][0],
-    #           "category_id": params_lists['category_name_list'][0],
-    #           }
-    # print("params:", params)
-    # try:
-    #     print(f"try to get data to revenue_bar_plot")
-    #     req = requests.get(f"http://62.84.124.35:5051/api/v1/day/graphs/revenue_rub", params=params)
-    #     print(req.status_code)
-    #     print(req.content)
-    #     data = req.json()
-    #     print(data)
-    #     if req.status_code == 422:
-    #         dff = pd.DataFrame.from_dict(data)
-    #     else:
-    #         return None
-    # except requests.exceptions.RequestException as e:
-    #     print(f"Request error to /api/v1/{d_w_m}/graphs/revenue_rub: " + str(e))
-    #     return None
-    dff = pd.DataFrame(data={'col1': [1, 2], 'col2': [3, 4]})
-    fig = px.bar(dff, x="col1", y="col2", title="Динамика суммы заказов")
+    Input('clientside-figure-store-px', 'data')
+)
+def update_graph(jsonified_data):
+    if jsonified_data is None:
+        raise PreventUpdate
+    dff = pd.read_json(jsonified_data, orient='split')
+    fig = px.bar(dff, x="date", y="result", title="Динамика суммы заказов")
     return fig
 
+
+# fig = Figure({
+#     'data': [{'alignmentgroup': 'True',
+#               'hovertemplate': 'date=%{x}<br>result=%{y}<extra></extra>',
+#               'legendgroup': '',
+#               'marker': {'color': '#636efa', 'pattern': {'shape': ''}},
+#               'name': '',
+#               'offsetgroup': '',
+#               'orientation': 'v',
+#               'showlegend': False,
+#               'textposition': 'auto',
+#               'type': 'bar',
+#               'x': array(['2022-11-27', '2022-11-28', '2022-11-29', '2022-12-02', '2022-12-03'],
+#                          dtype=object),
+#               'xaxis': 'x',
+#               'y': array([766711., 692273.,  45408.,  79083., 425261.]),
+#               'yaxis': 'y'}],
+#     'layout': {'barmode': 'relative',
+#                'legend': {'tracegroupgap': 0},
+#                'template': '...',
+#                'title': {'text': 'Динамика суммы заказов'},
+#                'xaxis': {'anchor': 'y', 'domain': [0.0, 1.0], 'title': {'text': 'date'}},
+#                'yaxis': {'anchor': 'x', 'domain': [0.0, 1.0], 'title': {'text': 'result'}}}
+# })
 
 @app.callback(
-    Output('impressions_to_cart_conversion', 'figure'),
-    Input('d_w_m_selection', 'value'),
-    Input('seller_name_dropdown', 'value'),
-    Input('category_dropdown', 'value'),
-    Input('category_dropdown', 'options'),
-    Input('brand_dropdown', 'value'),
-    Input('brand_dropdown', 'options'), )
-def revenue_bar_plot(d_w_m, seller_name, category_names, all_category_names, brand_names, all_brand_names):
-    dff = pd.DataFrame(data={'col1': [1, 2], 'col2': [3, 4]})
-    fig = px.line(dff, x="col1", y="col2", title="Конверсия из показа в корзину, %")
-    return fig
+    Output('clientside-figure-json', 'children'),
+    Input('clientside-figure-store-px', 'data')
+)
+def generated_figure_json(data):
+    return '```\n'+json.dumps(data, indent=2)+'\n```'
 
 
-@app.callback(
-    Output('cart_to_order_conversion', 'figure'),
-    Input('d_w_m_selection', 'value'),
-    Input('seller_name_dropdown', 'value'),
-    Input('category_dropdown', 'value'),
-    Input('category_dropdown', 'options'),
-    Input('brand_dropdown', 'value'),
-    Input('brand_dropdown', 'options'), )
-def revenue_bar_plot(d_w_m, seller_name, category_names, all_category_names, brand_names, all_brand_names):
-    dff = pd.DataFrame(data={'col1': [1, 2], 'col2': [3, 4]})
-    fig = px.line(dff, x="col1", y="col2", title="Конверсия из корзины в заказ, %")
-    return fig
-
-
-@app.callback(
-    Output('impressions_to_order_conversion', 'figure'),
-    Input('d_w_m_selection', 'value'),
-    Input('seller_name_dropdown', 'value'),
-    Input('category_dropdown', 'value'),
-    Input('category_dropdown', 'options'),
-    Input('brand_dropdown', 'value'),
-    Input('brand_dropdown', 'options'), )
-def revenue_bar_plot(d_w_m, seller_name, category_names, all_category_names, brand_names, all_brand_names):
-    dff = pd.DataFrame(data={'col1': [1, 2], 'col2': [3, 4]})
-    fig = px.line(dff, x="col1", y="col2", title="Конверсия из показа в заказ, %")
-    return fig
+# @app.callback(
+#     Output('impressions_to_cart_conversion', 'figure'),
+#     Input('d_w_m_selection', 'value'),
+#     Input('date_picker', 'start_date'),
+#     Input('date_picker', 'end_date'),
+#     Input('seller_name_dropdown', 'value'),
+#     Input('category_dropdown', 'value'),
+#     Input('category_dropdown', 'options'),
+#     Input('brand_dropdown', 'value'),
+#     Input('brand_dropdown', 'options'), )
+# def impressions_to_cart_conversion_plot(time_unit, start_date, end_date, seller_name, category_names,
+#                                         all_category_names, brand_names, all_brand_names):
+#     if not (category_names and all_category_names and brand_names and all_brand_names):
+#         return None
+#     params = get_graph_params(time_unit, start_date, end_date, seller_name, category_names,
+#                               all_category_names, brand_names, all_brand_names)
+#     try:
+#         print(f"try to get data to impressions_to_cart_conversion")
+#         req = requests.post(f"http://62.84.124.35:5051/api/v1/graphs/impressions_to_cart_conversion", json=params)
+#         req.raise_for_status()
+#         data = req.json()
+#         if data['result'] == 'No data available':
+#             print(f"Response from /api/v1/graphs/impressions_to_cart_conversion with params={params}:",
+#                   f"No data available")
+#             return None
+#         dff = pd.DataFrame.from_dict(data)
+#     except requests.exceptions.RequestException as e:
+#         print(f"Request error to /api/v1/graphs/impressions_to_cart_conversion: " + str(e))
+#         return None
+#     fig = px.line(dff, x="date", y="result", title="Конверсия из показа в корзину, %")
+#     return fig
+#
+#
+# @app.callback(
+#     Output('cart_to_order_conversion', 'figure'),
+#     Input('d_w_m_selection', 'value'),
+#     Input('date_picker', 'start_date'),
+#     Input('date_picker', 'end_date'),
+#     Input('seller_name_dropdown', 'value'),
+#     Input('category_dropdown', 'value'),
+#     Input('category_dropdown', 'options'),
+#     Input('brand_dropdown', 'value'),
+#     Input('brand_dropdown', 'options'), )
+# def cart_to_order_conversion_plot(time_unit, start_date, end_date, seller_name, category_names,
+#                                   all_category_names, brand_names, all_brand_names):
+#     if not (category_names and all_category_names and brand_names and all_brand_names):
+#         return None
+#     params = get_graph_params(time_unit, start_date, end_date, seller_name, category_names,
+#                               all_category_names, brand_names, all_brand_names)
+#     try:
+#         print(f"try to get data to cart_to_order_conversion")
+#         req = requests.post(f"http://62.84.124.35:5051/api/v1/graphs/cart_to_order_conversion", json=params)
+#         req.raise_for_status()
+#         data = req.json()
+#         if data['result'] == 'No data available':
+#             print(f"Response from /api/v1/graphs/cart_to_order_conversion with params={params}:",
+#                   f"No data available")
+#             return None
+#         dff = pd.DataFrame.from_dict(data)
+#     except requests.exceptions.RequestException as e:
+#         print(f"Request error to /api/v1/graphs/cart_to_order_conversion: " + str(e))
+#         return None
+#     fig = px.line(dff, x="date", y="result", title="Конверсия из корзины в заказ, %")
+#     return fig
+#
+#
+# @app.callback(
+#     Output('impressions_to_order_conversion', 'figure'),
+#     Input('d_w_m_selection', 'value'),
+#     Input('date_picker', 'start_date'),
+#     Input('date_picker', 'end_date'),
+#     Input('seller_name_dropdown', 'value'),
+#     Input('category_dropdown', 'value'),
+#     Input('category_dropdown', 'options'),
+#     Input('brand_dropdown', 'value'),
+#     Input('brand_dropdown', 'options'), )
+# def impressions_to_order_conversion_plot(time_unit, start_date, end_date, seller_name, category_names,
+#                                          all_category_names, brand_names, all_brand_names):
+#     if not (category_names and all_category_names and brand_names and all_brand_names):
+#         return None
+#     params = get_graph_params(time_unit, start_date, end_date, seller_name, category_names,
+#                               all_category_names, brand_names, all_brand_names)
+#     try:
+#         print(f"try to get data to impressions_to_order_conversion")
+#         req = requests.post(f"http://62.84.124.35:5051/api/v1/graphs/impressions_to_order_conversion", json=params)
+#         req.raise_for_status()
+#         data = req.json()
+#         if data['result'] == 'No data available':
+#             print(f"Response from /api/v1/graphs/impressions_to_order_conversion with params={params}:",
+#                   f"No data available")
+#             return None
+#         dff = pd.DataFrame.from_dict(data)
+#     except requests.exceptions.RequestException as e:
+#         print(f"Request error to /api/v1/graphs/impressions_to_order_conversion: " + str(e))
+#         return None
+#     fig = px.line(dff, x="date", y="result", title="Конверсия из показа в заказ, %")
+#     return fig
 
 
 @app.callback(
